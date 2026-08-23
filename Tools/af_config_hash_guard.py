@@ -19,7 +19,8 @@ This guard closes that gap with three checks:
   A: the hash computed by the real module equals the pinned constant
      ``EXPECTED_CONFIG_HASH`` below;
   B: every configuration hash quoted anywhere in the repository's Markdown
-     is a prefix of the computed hash;
+     is a prefix of the computed hash, or of one of the superseded pins
+     recorded in ``HISTORICAL_CONFIG_HASHES``;
   C: ``describe()`` really emits the first sixteen characters of the hash,
      so the human-facing report cannot drift away from the computed value.
 
@@ -33,8 +34,17 @@ any kind is involved; the module is imported as plain CPython.
 Changing a configuration value is expected to break check A.  That is the
 point.  The correct response is to re-run this guard, read the reported
 value, update ``EXPECTED_CONFIG_HASH`` deliberately in the same change set,
-and update the quoted values in the documentation.  The response is never
-to relax the check.
+move the value it replaced into ``HISTORICAL_CONFIG_HASHES``, and update
+every documentation quotation that describes the *current* configuration.
+The response is never to relax the check.
+
+Quotations that describe a *past* configuration are a different matter.  The
+decision log is append-only, so "old hash X, new hash Y" entries stay true
+forever and must not be rewritten to match the present.  Check B therefore
+consults an explicit allow-list of superseded pins.  That is a widening of
+what counts as an honest quotation, not a weakening of the check: a hash
+that is neither current nor a recorded predecessor still fails, and check A
+is unaffected.
 
 Exit codes
 ----------
@@ -64,11 +74,53 @@ import sys
 # Update this ONLY together with a deliberate configuration change, and say
 # so in the commit message.
 EXPECTED_CONFIG_HASH = (
-    "c9ef9f7e985a1aaf460d58db6e269d3e5b607f268df12acf3500a8492869f4fc"
+    "933a11f6292ec2b5548913c2e0e89790fcf06f7fb3e37eed29875ea04339c225"
 )
 
 # Number of characters describe() and the documentation quote.
 SHORT_LEN = 16
+
+# ---------------------------------------------------------------------------
+# 0b. Superseded pins -- check B allow-list
+# ---------------------------------------------------------------------------
+#
+# The decision log is an append-only record. Entries of the form "old hash X,
+# new hash Y" are true statements about the past, so check B's original
+# premise -- that EVERY hash quoted anywhere in the prose is a prefix of the
+# CURRENT hash -- cannot be satisfied by a repository that keeps such a log
+# without falsifying it.
+#
+# This is an allow-list, not a relaxation. A quoted hash is accepted only if
+# it is a prefix of the current hash or of one of the pins recorded below; an
+# arbitrary or mistyped hash still fails, and check A is untouched.
+#
+# Each entry is (pipeline_version, recorded_value). The 0B.1.1 value is held
+# at its documented sixteen-character short form because that is the only
+# form the decision log preserves. It has not been recomputed here, and this
+# file does not claim that it was.
+HISTORICAL_CONFIG_HASHES = (
+    (
+        "0B.1.0",
+        "c9ef9f7e985a1aaf460d58db6e269d3e5b607f268df12acf3500a8492869f4fc",
+    ),
+    ("0B.1.1", "6486736f83b6fb7f"),
+    (
+        "0B.1.2",
+        "0c0be9d960b7321c223e4fbd3bbeb6a59b6cf7bbf2793e3967022eba2a1f4449",
+    ),
+)
+
+
+def is_historical_claim(token):
+    """True when ``token`` agrees with a recorded superseded pin.
+
+    Agreement is prefix agreement in either direction, because the prose
+    quotes both the sixteen-character short form and the full digest.
+    """
+    for _version, recorded in HISTORICAL_CONFIG_HASHES:
+        if recorded.startswith(token) or token.startswith(recorded):
+            return True
+    return False
 
 # ---------------------------------------------------------------------------
 # 1. Repository geometry
@@ -281,6 +333,7 @@ def check_documented_claims(root, computed, scanned_paths=None):
     """
     findings = []
     total = 0
+    historical = 0
     per_file = []
 
     if scanned_paths is None:
@@ -305,6 +358,9 @@ def check_documented_claims(root, computed, scanned_paths=None):
             total += 1
             if computed.startswith(token):
                 continue
+            if is_historical_claim(token):
+                historical += 1
+                continue
             findings.append(
                 Finding(
                     "B",
@@ -316,6 +372,7 @@ def check_documented_claims(root, computed, scanned_paths=None):
 
     detail = {
         "claims_total": total,
+        "claims_historical": historical,
         "files_with_claims": per_file,
         "files_scanned": len(scanned_paths),
     }
@@ -535,6 +592,56 @@ class _SelfTest(object):
         self.equal("B zero claims clean", len(findings), 0)
         self.equal("B zero claims counted", detail["claims_total"], 0)
 
+    def t_b13_historical_claim_is_accepted(self):
+        computed = "933a11f6292ec2b5" + "0" * 48
+        findings, detail = check_documented_claims(
+            self._fixture(
+                {"Documentation/x.md": "old config hash c9ef9f7e985a1aaf"}
+            ),
+            computed,
+        )
+        self.equal("B historical claim accepted", len(findings), 0)
+        self.equal(
+            "B historical claim counted", detail["claims_historical"], 1
+        )
+
+    def t_b14_unknown_claim_is_still_reported(self):
+        computed = "933a11f6292ec2b5" + "0" * 48
+        findings, detail = check_documented_claims(
+            self._fixture(
+                {"Documentation/x.md": "config hash deadbeefdeadbeef"}
+            ),
+            computed,
+        )
+        self.equal("B unknown claim still fails", len(findings), 1)
+        self.equal("B unknown claim not excused", detail["claims_historical"], 0)
+
+    def t_b15_historical_entries_are_well_formed(self):
+        ok = True
+        for _version, recorded in HISTORICAL_CONFIG_HASHES:
+            if not re.match(r"^[0-9a-f]{16,64}$", recorded):
+                ok = False
+        self.check("B historical entries are 16-64 lowercase hex", ok)
+
+    def t_b16_current_pin_is_not_also_historical(self):
+        recorded = [value for _version, value in HISTORICAL_CONFIG_HASHES]
+        self.check(
+            "B current pin is not shadowed by the allow-list",
+            EXPECTED_CONFIG_HASH not in recorded,
+        )
+
+    def t_b17_short_form_matches_full_digest(self):
+        self.check(
+            "B short recorded form matches a full claim",
+            is_historical_claim("6486736f83b6fb7f" + "a" * 48),
+        )
+
+    def t_b18_unrelated_token_is_not_historical(self):
+        self.check(
+            "B unrelated token rejected",
+            not is_historical_claim("deadbeefdeadbeef"),
+        )
+
     # -- check C ---------------------------------------------------------
 
     def t_c01_describe_containing_short_hash_is_clean(self):
@@ -675,6 +782,10 @@ def run_guard(root, verbose=False):
         )
         for rel, count in detail_b["files_with_claims"]:
             print("    %-58s %d claim(s)" % (rel, count))
+        print(
+            "B superseded    : %d claim(s) matched a recorded historical pin"
+            % detail_b.get("claims_historical", 0)
+        )
         if detail_b["claims_total"] == 0:
             print(
                 "    note: no configuration hash is quoted anywhere in the "
