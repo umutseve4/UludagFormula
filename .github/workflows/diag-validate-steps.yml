@@ -1,0 +1,62 @@
+name: diag-validate-steps
+
+# TEMPORARY DIAGNOSTIC. Delete once the failing step is identified.
+#
+# validate.yml runs sixteen steps inside one job, so a failure shows up as a
+# single red tick named "Static validation (no engine, no DCC)" and the API
+# exposes no step-level detail. This workflow runs each command as its own
+# matrix job so the answer is readable from the job NAME alone.
+
+on:
+  push:
+    branches: ['diag/validate-steps']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  step:
+    name: 'step: ${{ matrix.id }}'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: '01-static-validator'
+            run: 'python3 Tools/af_static_validate.py --root .'
+          - id: '02-pipeline-config'
+            run: 'python3 BlenderPipeline/scripts/af_pipeline_config.py'
+          - id: '03-lap-rules-selftest'
+            run: 'python3 Tools/af_lap_rules_model.py --self-test'
+          - id: '04-drift-guard-selftest'
+            run: 'python3 Tools/af_drift_guard.py --self-test'
+          - id: '05-drift-guard-real'
+            run: 'python3 Tools/af_drift_guard.py --root . --verbose'
+          - id: '06-circuit-generate-selftest'
+            run: 'python3 BlenderPipeline/scripts/af_circuit_generate.py --self-test'
+          - id: '07-track-drift-selftest'
+            run: 'python3 Tools/af_track_drift_guard.py --self-test'
+          - id: '08-track-drift-real'
+            run: 'python3 Tools/af_track_drift_guard.py --root . --verbose'
+          - id: '09-config-hash-selftest'
+            run: 'python3 Tools/af_config_hash_guard.py --self-test'
+          - id: '10-config-hash-real'
+            run: 'python3 Tools/af_config_hash_guard.py --root . --verbose'
+          - id: '11-mesh-quality-selftest'
+            run: 'python3 Tools/af_mesh_quality.py --self-test'
+          - id: '12-mesh-quality-real'
+            run: 'python3 Tools/af_mesh_quality.py'
+          - id: '13-bodywork-selftest'
+            run: 'python3 BlenderPipeline/scripts/af_bodywork_profile.py --self-test'
+          - id: '14-mesh-export-selftest'
+            run: 'python3 BlenderPipeline/scripts/af_mesh_export.py --self-test'
+          - id: '15-compileall'
+            run: 'python3 -m compileall -q BlenderPipeline/scripts Tools'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: ${{ matrix.id }}
+        run: ${{ matrix.run }}
