@@ -121,3 +121,16 @@ Unreal/Config/DefaultEditor.ini
 # directory when the machine is next reachable.
 # ------------------------------------------------------------
 BlenderPipeline/tools/local_diagnostics/
+
+# ------------------------------------------------------------
+# Root-level tools/ — reserved, never a real directory here.
+# The committed validators live in Tools/ with a capital T. On a
+# case-insensitive filesystem (default Windows and macOS) a
+# lowercase tools/ resolves to the same directory, so tracking both
+# makes the checkout ambiguous on the development machine while CI
+# on a case-sensitive filesystem sees two. tools/apply_open071a.py
+# reached main exactly that way and is removed in this branch.
+# Anchored with a leading slash so nested tools/ directories such as
+# BlenderPipeline/tools/ stay visible to `git status`.
+# ------------------------------------------------------------
+/tools/
