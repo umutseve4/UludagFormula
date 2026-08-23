@@ -19,7 +19,8 @@ This guard closes that gap with three checks:
   A: the hash computed by the real module equals the pinned constant
      ``EXPECTED_CONFIG_HASH`` below;
   B: every configuration hash quoted anywhere in the repository's Markdown
-     is a prefix of the computed hash;
+     is a prefix of the computed hash, or of one of the superseded pins
+     recorded in ``HISTORICAL_CONFIG_HASHES``;
   C: ``describe()`` really emits the first sixteen characters of the hash,
      so the human-facing report cannot drift away from the computed value.
 
@@ -33,8 +34,17 @@ any kind is involved; the module is imported as plain CPython.
 Changing a configuration value is expected to break check A.  That is the
 point.  The correct response is to re-run this guard, read the reported
 value, update ``EXPECTED_CONFIG_HASH`` deliberately in the same change set,
-and update the quoted values in the documentation.  The response is never
-to relax the check.
+move the value it replaced into ``HISTORICAL_CONFIG_HASHES``, and update
+every documentation quotation that describes the *current* configuration.
+The response is never to relax the check.
+
+Quotations that describe a *past* configuration are a different matter.  The
+decision log is append-only, so "old hash X, new hash Y" entries stay true
+forever and must not be rewritten to match the present.  Check B therefore
+consults an explicit allow-list of superseded pins.  That is a widening of
+what counts as an honest quotation, not a weakening of the check: a hash
+that is neither current nor a recorded predecessor still fails, and check A
+is unaffected.
 
 Exit codes
 ----------
