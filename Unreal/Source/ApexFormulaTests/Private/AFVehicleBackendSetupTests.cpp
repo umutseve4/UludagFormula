@@ -1,4 +1,4 @@
-﻿// Copyright ApexFormula. Original work. Not affiliated with any real motorsport series.
+// Copyright ApexFormula. Original work. Not affiliated with any real motorsport series.
 
 #include "AFVehicleCompatibilityLayer.h"
 #include "AFWheelSetup.h"
