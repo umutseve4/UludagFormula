@@ -1,0 +1,74 @@
+name: patch-bom-detection
+
+# Scaffold, not permanent infrastructure. It exists to apply one edit to a
+# 1381-line file on the runner instead of through hand transcription, and it
+# is deleted before the pull request merges.
+#
+# Deliberately narrow: one branch, one path. A workflow with contents:write
+# that triggers broadly is a footgun, and the bot commit carries [skip ci]
+# so it cannot retrigger this file.
+
+on:
+  push:
+    branches:
+      - hardening/bom-detection
+    paths:
+      - Tools/af_patch_bom_detection.py
+      - .github/workflows/patch-bom-detection.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 3.9 is the floor the project supports, so the patched file has to
+      # parse there, not merely on the runner default.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Apply the patch
+        run: python Tools/af_patch_bom_detection.py
+
+      - name: Patched file must still parse
+        run: python -m py_compile Tools/af_static_validate.py
+
+      - name: Regression test must PASS against the patched validator
+        run: python Tools/af_test_bom_detection.py
+
+      # Negative control. If this test also passed against the old code it
+      # would be testing nothing, and the whole exercise would be theatre.
+      - name: Regression test must FAIL against the pre-patch validator
+        run: |
+          git show origin/main:Tools/af_static_validate.py > /tmp/pre_patch.py
+          set +e
+          VALIDATOR=/tmp/pre_patch.py python Tools/af_test_bom_detection.py
+          rc=$?
+          set -e
+          echo "pre-patch exit code: $rc"
+          if [ "$rc" -eq 0 ]; then
+            echo "NEGATIVE CONTROL FAILED: the test passes without the fix."
+            exit 1
+          fi
+          echo "Negative control holds: the fix is what makes the test pass."
+
+      - name: Full validator must stay green on the real tree
+        run: python Tools/af_static_validate.py --root . --verbose
+
+      - name: Commit the patched validator
+        run: |
+          if git diff --quiet -- Tools/af_static_validate.py; then
+            echo "no change to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Tools/af_static_validate.py
+          git commit -m "fix(validator): strip and report the UTF-8 BOM [skip ci]"
+          git push
