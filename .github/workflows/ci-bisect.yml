@@ -1,0 +1,57 @@
+# TEMPORARY diagnostic workflow.
+#
+# Splits af_static_validate.py into one job per check group so that the failing
+# group is identifiable from check-run names alone, without reading logs.
+#
+# fail-fast is off on purpose: the point is to see EVERY red group in one run,
+# not just the first one scheduled.
+#
+# Delete together with Tools/af_ci_bisect.py once the root cause is fixed.
+
+name: CI bisect (temporary)
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-bisect-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bisect:
+    name: "check: ${{ matrix.group }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group:
+          - build_graph
+          - boundaries
+          - acyclic
+          - module_implementations
+          - uproject
+          - targets
+          - header_hygiene
+          - include_resolution
+          - originality
+          - portability
+          - vehicle_backend_isolation
+          - telemetry_literals
+          - bone_convention
+          - config
+          - tests
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run one check group
+        run: python Tools/af_ci_bisect.py --group ${{ matrix.group }} --root .
