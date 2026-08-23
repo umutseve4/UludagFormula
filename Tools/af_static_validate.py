@@ -207,8 +207,41 @@ SOURCE_EXTENSIONS = (".h", ".cpp")
 
 
 def read_text(path: str) -> str:
-    with open(path, "r", encoding="utf-8") as handle:
+    """Read a source file as text, tolerating a UTF-8 BOM.
+
+    "utf-8-sig" rather than "utf-8" is deliberate. Python's plain "utf-8"
+    codec does not consume a leading EF BB BF; it decodes it to U+FEFF and
+    hands it back as the first character of the string. Every rule that
+    anchors on the start of a file then fails on a file that is, to the eye
+    and to every editor, entirely correct - a BOM has zero width, so it is
+    invisible in a diff, in a blob view and in review.
+
+    This is not hypothetical. It held this repository's CI red and presented
+    itself as ten simultaneous copyright-header violations. Stripping the
+    BOM here is only half the fix; see has_utf8_bom and check_header_hygiene
+    for the half that keeps the fault visible under its own name.
+    """
+    with open(path, "r", encoding="utf-8-sig") as handle:
         return handle.read()
+
+
+def has_utf8_bom(path: str) -> bool:
+    """True when the file begins with the UTF-8 byte order mark.
+
+    Deliberately inspects raw bytes, because read_text now strips the BOM by
+    design. The two functions are complements: one stops a BOM from
+    corrupting every other rule, the other makes sure its presence is still
+    reported. Silently tolerating it would trade a confusing failure for an
+    invisible one, which is worse.
+
+    PowerShell is the usual source - both Out-File and > default to UTF-8
+    with a BOM.
+    """
+    try:
+        with open(path, "rb") as handle:
+            return handle.read(3) == b"\xef\xbb\xbf"
+    except OSError:
+        return False
 
 
 def iter_source_files(root: str) -> List[str]:
@@ -587,6 +620,16 @@ def check_header_hygiene(root: str, report: Report) -> None:
         rel = relpath(root, path)
         text = read_text(path)
         module = rel.split("/")[2] if len(rel.split("/")) > 2 else ""
+
+        # A BOM is reported under its own name. Without this rule the fault
+        # is mute - invisible in every editor - and surfaces as whichever
+        # start-of-file rule happens to run first, sending the reader hunting
+        # for a copyright bug that does not exist.
+        report.check(
+            not has_utf8_bom(path),
+            "%s has no UTF-8 BOM" % rel,
+            "write UTF-8 without BOM; PowerShell Out-File and > add one",
+        )
 
         # Attribution on every file. This is an originality requirement, not a
         # decoration: the disclaimer has to travel with any file that leaves
