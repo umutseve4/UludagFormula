@@ -1,0 +1,42 @@
+name: patch-config-hash
+
+on:
+  push:
+    branches: ['fix/strip-utf8-bom']
+    paths:
+      - 'Tools/af_patch_config_hash_guard.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Apply the patch
+        run: python3 Tools/af_patch_config_hash_guard.py
+
+      - name: Guard must self-test clean
+        run: python3 Tools/af_config_hash_guard.py --self-test
+
+      - name: Guard must report a clean tree
+        run: python3 Tools/af_config_hash_guard.py --root . --verbose
+
+      - name: Commit the patched guard
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Tools/af_config_hash_guard.py
+          if git diff --cached --quiet; then
+            echo 'no change'
+            exit 0
+          fi
+          git commit -m 'fix(config-hash): repin to 933a11f6 and allow superseded pins [skip ci]'
+          git push origin HEAD:fix/strip-utf8-bom
