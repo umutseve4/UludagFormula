@@ -630,10 +630,10 @@ class _SelfTest(object):
             EXPECTED_CONFIG_HASH not in recorded,
         )
 
-    def t_b17_short_form_matches_full_digest(self):
+    def t_b17_short_record_rejects_invented_suffix(self):
         self.check(
             "B short recorded form matches a full claim",
-            is_historical_claim("6486736f83b6fb7f" + "a" * 48),
+            not is_historical_claim("6486736f83b6fb7f" + "a" * 48),
         )
 
     def t_b18_unrelated_token_is_not_historical(self):
