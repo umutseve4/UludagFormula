@@ -114,11 +114,11 @@ HISTORICAL_CONFIG_HASHES = (
 def is_historical_claim(token):
     """True when ``token`` agrees with a recorded superseded pin.
 
-    Agreement is prefix agreement in either direction, because the prose
+    Agreement is prefix agreement from a document prefix to a recorded digest, because the prose
     quotes both the sixteen-character short form and the full digest.
     """
     for _version, recorded in HISTORICAL_CONFIG_HASHES:
-        if recorded.startswith(token) or token.startswith(recorded):
+        if recorded.startswith(token):
             return True
     return False
 
@@ -632,7 +632,7 @@ class _SelfTest(object):
 
     def t_b17_short_record_rejects_invented_suffix(self):
         self.check(
-            "B short recorded form matches a full claim",
+            "B short recorded form rejects an invented suffix",
             not is_historical_claim("6486736f83b6fb7f" + "a" * 48),
         )
 
