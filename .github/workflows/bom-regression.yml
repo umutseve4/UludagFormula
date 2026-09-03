@@ -1,0 +1,41 @@
+name: BOM regression
+
+# Root cause of the 2026-08 CI outage: a UTF-8 BOM made every affected file
+# fail the *copyright* rule, because read_text() used encoding="utf-8", which
+# decodes EF BB BF to U+FEFF instead of consuming it. The validator accused
+# the wrong line and the real fault stayed invisible for days.
+#
+# This job asserts the two properties that keep that from recurring:
+#   1. a BOM is reported under its own name, and
+#   2. it never again shows up as a copyright violation.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bom-regression:
+    name: BOM detection regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          # 3.9 is the project floor. Testing on a newer interpreter than the
+          # one the validator must support would prove the wrong thing.
+          python-version: '3.9'
+
+      - name: Regression test
+        run: python Tools/af_test_bom_detection.py
