@@ -54,6 +54,20 @@ jobs:
       - name: Check interface override agreement
         run: python Tools/af_validate_interfaces.py --root .
 
+      - name: Self-test the credential guard
+        # Same ordering rule as D-030, same reason. The mutations here are
+        # the ways Unreal actually writes the token back (bare, spaced,
+        # indented, quoted, single character); if none of them turn this
+        # step red any more, the guard below is decoration and the build
+        # must say so instead of passing.
+        run: python Tools/af_check_credentials.py --self-test
+
+      - name: Check for committed credential values
+        # Issue #45. This does not scan history and does not invalidate any
+        # token that was already published; it only stops the value coming
+        # back. Secret scanning + push protection remain the primary control.
+        run: python Tools/af_check_credentials.py --root .
+
   syntax:
     name: Python syntax check
     runs-on: ubuntu-latest
